@@ -1,0 +1,83 @@
+---
+title: "COMMUTE"
+author: "Zhuodiao Kuang"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+
+```{r, packages loading and default set,echo = FALSE, message = FALSE, warning = FALSE}
+library(glmnet)
+library(lassoshooting)
+library(mvtnorm)
+library(pROC)
+library(rmutil)
+library(grplasso)
+library(Matrix)
+library(sim1000G)
+
+
+```
+
+```{r defaulted values}
+source('fastCOMMUTE_functions.R')
+
+id <- 1# set 1 first to try. id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
+sim_setting <- expand.grid(sim = 1:100, delta = 0.8, h = c("(10,10;10)","(30,30;30)","(60,60;60)","(10,60;60)"), r = 25)
+
+sim = sim_setting[id, 'sim']
+sig.delta = sim_setting[id, 'delta'] 
+h.tmp = sim_setting[id, 'h'] 
+h = c(as.numeric(gsub(".*\\((.*)\\,.*", "\\1", h.tmp)), as.numeric(gsub(".*\\,(.*)\\;.*", "\\1", h.tmp)), as.numeric(gsub(".*\\;(.*)\\).*", "\\1", h.tmp)))
+r = sim_setting[id, 'r']
+dir_out = 'path_to_save_result'
+
+exact = FALSE             #TRUE=S1; FALSE=S2
+K = 3                     #total number of source population 
+p = 80                  #number of variables
+s = p/2
+n0 = 100                  #target population size
+nt = c(2000, 2000, 2000)    #source population size
+n.test = 1000
+intercept = rep(1, K+1) 
+```
+
+
+# Generating Results
+
+```{r}
+library(tidyr)
+ LOOP=25
+ source('core_functions_v4_woodbury.R')
+ source('COMMUTE_sim_example.R')
+ diffloop<-c(1,2,5)
+ ploop<-c(80,120,200)
+ mselistCOMMUTE<-matrix(0,LOOP*7,4)
+for (k in diffloop) {
+  for (j in ploop) {
+ diffperct = k*0.1
+ p = j
+ s = p/2
+ h= rep(p*diffperct,3)   #Difference between target and source
+
+ # Only Target & M=0 to M=K
+ mseout = matrix(0,LOOP,K+1+1+1+1)
+
+# Simulation results  
+for (loop in 1:LOOP) {
+#set.seed(sim = loop)
+  
+ COMMUTEout = tryCatch(simu(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test), error=function(err) list(matrix(NA,7,2)))
+ mselistCOMMUTE<-rbind(mselistCOMMUTE,as.matrix(COMMUTEout))
+ 
+}
+ 
+  
+  
+  }
+} 
+
+save(mselistCOMMUTE,file = "COMMUTELOOP.RData")
+```
+
+

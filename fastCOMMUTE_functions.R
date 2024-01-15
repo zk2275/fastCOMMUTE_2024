@@ -383,7 +383,7 @@ create.synthetic <- function(K, X.tar, n.src, r, B){
     print(k)
     
     X.syn.k = X.tar[sample(1:nrow(X.tar), size = n.syn[k], replace=TRUE),]
-    y.syn.k = rbinom(n.syn[k], 1, prob = logistic(c(cbind(1,X.syn.k) %*% B[[k]])))###?should I change the dimensions
+    y.syn.k = rbinom(n.syn[k], 1, prob = logistic(c(X.syn.k %*% B[[k]])))###?should I change the dimensions
     
     X.syn[[k]] = X.syn.k
     y.syn[[k]] = y.syn.k
@@ -486,3 +486,44 @@ mse.fun<- function(beta.true, est, X.test=NULL){
   sum((beta.true[-1]-est[-1])^2)
 }
 
+get.auc = function(X, y, beta){
+  pred.y = logistic(X%*%beta)
+  #mean(abs(y.test1-pred.y))
+  pROC::auc(pROC::roc(y, as.numeric(pred.y)))
+}
+
+Trans.global<-function(X.tar, y.tar, X.src, y.src, delta=NULL){
+  p <- ncol(X.tar)
+  n0.tar <- length(y.tar)
+  K <- length(y.src)  ###(K>1)
+  ##global method
+  Xdelta = c()
+  if(is.null(delta)){
+    for(k in 1:K){
+      w.k = as.numeric(ST.init(X.src[[k]], y.src[[k]])$beta0)
+      fit.tar <- cv.glmnet(x=X.tar, y=y.tar, nfolds=5, offset=w.k[1]+X.tar%*%w.k[-1], lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar))
+      delta.k = c(fit.tar$glmnet.fit$a0[which(fit.tar$lambda == fit.tar$lambda.min)], fit.tar$glmnet.fit$beta[, which(fit.tar$lambda == fit.tar$lambda.min)])
+      delta.k.thre = thres(delta.k, sqrt(n0.tar), p) ###+threshold
+      Xdelta.k = tcrossprod(delta.k.thre[-1], X.src[[k]])+delta.k.thre[1]
+      Xdelta = c(Xdelta, Xdelta.k)
+    }
+  }else{
+    for(k in 1:K){
+      Xdelta.k = tcrossprod(delta[[k]], X.src[[k]])
+      Xdelta = c(Xdelta, Xdelta.k)
+    }
+  }
+  
+  XX.src <- yy.src <- NULL
+  for(k in 1:K){
+    XX.src <- rbind(XX.src, X.src[[k]])
+    yy.src <- c(yy.src, y.src[[k]])
+  }
+  
+  n0.tar.global <- length(c(y.tar,yy.src))
+  offset <- c(rep(0, nrow(X.tar)), -Xdelta)
+  fit.global <- cv.glmnet(x=rbind(X.tar,XX.src), y=c(y.tar,yy.src), nfolds=5, offset=offset, lambda=seq(0.25, 0.05, length.out=20)*sqrt(2*log(p)/n0.tar.global))
+  beta.hat = fit.global$glmnet.fit$beta[, which(fit.global$lambda == fit.global$lambda.min)]
+  
+  return(beta.hat)
+}
