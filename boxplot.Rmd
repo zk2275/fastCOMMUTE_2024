@@ -17,11 +17,14 @@ library(Matrix)
 library(sim1000G)
 library(ggplot2)
 library(dplyr)
+library(tidyr)
 source('fastCOMMUTE_functions.R')
 
 ```
 
-```{r defaulted values}
+
+
+```{r GENERAL SETTING}
 id <- 1# set 1 first to try. id <- as.numeric(Sys.getenv("SLURM_ARRAY_TASK_ID"))
 sim_setting <- expand.grid(sim = 1:100, delta = 0.8, h = c("(10,10;10)","(30,30;30)","(60,60;60)","(10,60;60)"), r = 25)
 
@@ -40,26 +43,30 @@ diffperct = 0.1
 h= rep(p*diffperct,3)   #Difference between target and source
 s = p/2
 n0 = 100                  #target population size
-nt = c(2000, 2000, 2000)    #source population size
+nt = c(2000, 2500, 3000)    #source population size
 n.test = 1000
 intercept = rep(1, K+1)
+LOOP=1
+ # import data
+ X.pool = data.matrix(read.table('./Xpool.txt', header = F))
 ```
 
 ### boxplot 3 by 3
 
-```{r}
-library(tidyr)
- LOOP=25 
- source('core_functions_v4_woodbury.R')
- diffloop<-c(1,2,5)
- ploop<-c(80,120,200)
- mselist<-matrix(0,LOOP,K+1+1+1+1)
+```{r Generate fastCOMMUTE DONT NEED TO DO IT AGAIN}
+source('core_functions_v4_woodbury.R')
+
+diffloop<-c(2,4)
+ploop<-c(600,1000)
+mselist<-matrix(0,LOOP,K+1+1+1+1)
 for (k in diffloop) {
   for (j in ploop) {
- diffperct = k*0.1
+ diffperct = k*0.01
  p = j
  s = p/2
  h= rep(p*diffperct,3)   #Difference between target and source
+ 
+
 
  # Only Target & M=0 to M=K
  mseout = matrix(0,LOOP,K+1+1+1+1)
@@ -67,16 +74,21 @@ for (k in diffloop) {
 # Simulation results  
 for (loop in 1:LOOP) {
 #set.seed(sim = loop)
- DATA<-data_generation(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
+ DATA<-data_generation(loop, p, s, K, n0, nt, nov = "large", h, sig.delta, intercept, exact, r, n.test)
  X.tar =DATA$X.tar
  X.src =DATA$X.src
  y.tar =DATA$y.tar
  y.src =DATA$y.src
  delta.TL =DATA$delta.TL
- wthreshold = DATA$wthreshold
- beta.tar = ginv(t(X.tar)%*%X.tar)%*%t(X.tar)%*%y.tar
- a<-beta_fastCOMMUTE_generation(K, method = "fastcommute",X.tar,X.src,y.tar,y.src,delta.TL,wthreshold)
+ wthreshold = DATA$wthreshold 
  beta.true = DATA$beta.true
+ beta.tar = ginv(t(X.tar)%*%X.tar)%*%t(X.tar)%*%y.tar
+
+ 
+ a<-beta_fastCOMMUTE_generation(K, method = "fastcommute",nov = "large",X.tar,X.src,y.tar,y.src,delta.TL,wthreshold,beta.true)
+   
+ 
+
 
 # Only Target
  mseout[loop,1] =mse.fun(beta.true, beta.tar)
@@ -92,26 +104,29 @@ for (loop in 1:LOOP) {
  mseout[loop,7] = diffperct
 
 }
-  mse
+  
   mselist<-rbind(mselist,mseout)
   
   }
 } 
  
+# save(mselist,file = "boxplot121.RData") 
 ```
 
 
 ### I have saved the data
 
 ```{r}
-load("C:/2024Spring/fastCOMMUTE_2024/COMMUTELOOP.RData")
-load("C:/2024Spring/fastCOMMUTE_2024/boxplot114.RData")
+load("C:/2024Spring/fastCOMMUTE_2024/COMMUTELOOP129.RData")
+load("C:/2024Spring/fastCOMMUTE_2024/boxplot121.RData")
+
+
 ```
 
 ### Give it a first try
 
 ```{r}
-mselist2<-mselist[-c(1:25),]
+mselist2<-mselist[-c(1:LOOP),]
 mselist2<-as.data.frame(mselist2)
 colnames(mselist2)<-c("Target-Only",c(0:K),"p","diff")
 mseout_plt <- mselist2
@@ -126,9 +141,8 @@ mseout_df
 
 ### Add COMMUTE
 
-
 ```{r}
-mselistCOMMUTE2<-mselistCOMMUTE[-c(1:175),]
+mselistCOMMUTE2<-mselistCOMMUTE[-c(1:(7*LOOP)),]
 mselistCOMMUTE2<-as.data.frame(mselistCOMMUTE2)
 mseCOMMUTE_df <- mselistCOMMUTE2 |>
   rename( Data= methods,
@@ -138,6 +152,26 @@ mseCOMMUTE_df <- mselistCOMMUTE2 |>
          MSE = as.numeric(MSE),
          p = as.numeric(p))|>
   select(p,diff,Data,MSE)
+
+```
+
+### Replace Target Only
+
+```{r}
+mselasso <- as.data.frame(mselistLASSOTargetOnly[-c(1:LOOP),])
+mselasso_df <- mselasso |>
+  rename( Data= method,
+         diff = diffperct,
+         MSE = mseout)|>
+  mutate(diff = as.numeric(diff),
+         MSE = as.numeric(MSE),
+         p = as.numeric(p))|>
+  select(p,diff,Data,MSE)
+mselasso_df$Data[mselasso_df$Data=="LASSOTargetOnly"]="Target-Only"
+mseout_df <- mseout_df |>
+  filter(Data != "Target-Only")
+
+mseout_df<-rbind(mseout_df,mselasso_df)
 
 ```
 
@@ -157,13 +191,32 @@ mseout_df_combined$group[mseout_df_combined$Data =="Target-Only"] <-"Target"
 mseout_df_combined$group[mseout_df_combined$Data =="w1"] <-"Source"
 mseout_df_combined$group[mseout_df_combined$Data =="w2"] <-"Source"
 mseout_df_combined$group[mseout_df_combined$Data =="w3"] <-"Source"
-mseout_df_combined$group[mseout_df_combined$Data =="beta.syn123.M0"] <-"COMMUTE"
-mseout_df_combined$group[mseout_df_combined$Data =="beta.syn123.M1"] <-"COMMUTE"
-mseout_df_combined$group[mseout_df_combined$Data =="beta.syn123.M2"] <-"COMMUTE"
-mseout_df_combined$group[mseout_df_combined$Data =="beta.TL123"] <-"COMMUTE"
+mseout_df_combined$group[mseout_df_combined$Data =="beta.syn.M0.agg.new"] <-"COMMUTE"
+mseout_df_combined$group[mseout_df_combined$Data =="beta.syn.M1.agg.new"] <-"COMMUTE"
+mseout_df_combined$group[mseout_df_combined$Data =="beta.syn.M2.agg.new"] <-"COMMUTE"
+mseout_df_combined$group[mseout_df_combined$Data =="beta.syn.M3.agg.new"] <-"COMMUTE"
 
 
 ```
+
+### Change beta.syn123.M0 to M0
+
+```{r}
+# COMMUTE
+mseout_df_combined$Data[mseout_df_combined$Data =="beta.syn.M0.agg.new"] <-"M=0"
+mseout_df_combined$Data[mseout_df_combined$Data =="beta.syn.M1.agg.new"] <-"M=1"
+mseout_df_combined$Data[mseout_df_combined$Data =="beta.syn.M2.agg.new"] <-"M=2"
+mseout_df_combined$Data[mseout_df_combined$Data =="beta.syn.M3.agg.new"] <-"M=3"
+
+# fastCOMMUTE
+mseout_df_combined$Data[mseout_df_combined$Data =="0"] <-"M=0"
+mseout_df_combined$Data[mseout_df_combined$Data =="1"] <-"M=1"
+mseout_df_combined$Data[mseout_df_combined$Data =="2"] <-"M=2"
+mseout_df_combined$Data[mseout_df_combined$Data =="3"] <-"M=3"
+
+```
+
+
 
 ### Making Plots
 
@@ -180,31 +233,38 @@ library(RColorBrewer)
 mseout_df_arranged<-mseout_df_combined |>
   arrange(p,diff)
 
+# re-order x-axis
+mseout_df_arranged$group = factor(mseout_df_arranged$group, c('Target','Source','COMMUTE','fastCOMMUTE'))
+
+# mseout_df_arranged <- mseout_df_arranged|>
+#   filter(group != 'COMMUTE')
+
 plot_list =list()
-for (i in 1:9) {
-  left<-(1+(i-1)*300)
-  right<-300*i
+
+mytitle <- c("p = 500, h(%) = (2,2,2)","p = 500, h(%) = (4,4,4)",
+             "p = 1000, h(%) = (2,2,2)","p = 1000, h(%) = (4,4,4)")
+
+for (i in 1:4) {
+  left<-(1+(i-1)*12*LOOP)
+  right<-12*LOOP*i
   
   p <- mseout_df_arranged[left:right,] |>  
-  ggplot(aes(x = Data, y = MSE, color = Data)) +
-  geom_boxplot()+  
+  ggplot(aes(x = Data, y = MSE, fill = group)) +
+  geom_boxplot()+ 
   facet_grid(cols = vars(group), scales = "free", space = "free")+
-  # facet_wrap(~p+diff)+ 
-  # omit legend
   theme(legend.position = "none",
         axis.text.x=element_text(angle=15,hjust=1))+
   # add meta-data
   labs(
-      title    = i,
-      x        = " "
-  ) 
-  
+      title    = mytitle [i],
+      x        = " ")
+  # ) +
+  # ylim(0,5)
   plot_list[[i]] = p
 }
 
 library(gridExtra)
-p1<-(plot_list[[1]] | plot_list[[2]]| plot_list[[3]]) / (plot_list[[4]] | plot_list[[5]]| plot_list[[6]])/
-  (plot_list[[7]] | plot_list[[8]]| plot_list[[9]])
+p1<-(plot_list[[1]] | plot_list[[2]]) / (plot_list[[3]] | plot_list[[4]])
 p1
 
 ggsave("Crude_Boxplot.png",p1)
@@ -217,83 +277,20 @@ ggsave("Crude_Boxplot.png",p1)
 
 
 
-### boxplot seperate
+### Time Table
 
-```{r plots}
- library(tidyr)
- LOOP=1
- source('core_functions_v4_woodbury.R')
- diffloop<-c(1,2,5)
- ploop<-c(80,120,200)
-for (k in diffloop) {
-  for (j in ploop) {
- diffperct = k*0.1
- p = j
- s = p/2
- h= rep(p*diffperct,3)   #Difference between target and source
+```{r timetable}
+library(ggplotify)
+library(eoffice)
+f1 = 'test1_24.pptx'
+f2 = 'test2_24.pptx'
+f3 = 'test3_24.pptx'
+f4 = 'test4_24.pptx'
 
- # Only Target & M=0 to M=K
- mseout = matrix(0,LOOP,K+1+1)
-
-# Simulation results  
-for (loop in 1:LOOP) {
-#set.seed(sim = loop)
- DATA<-data_generation(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
- X.tar =DATA$X.tar
- X.src =DATA$X.src
- y.tar =DATA$y.tar
- y.src =DATA$y.src
- delta.TL =DATA$delta.TL
- wthreshold = DATA$wthreshold
- beta.tar = ginv(t(X.tar)%*%X.tar)%*%t(X.tar)%*%y.tar
- a<-beta_fastCOMMUTE_generation(K, method = "fastcommute",X.tar,X.src,y.tar,y.src,delta.TL,wthreshold)
- beta.true = DATA$beta.true
-
-# Only Target
- mseout[loop,1] =mse.fun(beta.true, beta.tar)
-# M=0 
- mseout[loop,2] = mse.fun(beta.true, a[[K+1]])
-# M=1 to M=K 
- for(i in 1:K){
- mseout[loop,i+2] = mse.fun(beta.true, a[[i]])
-    
- }
-
-}
-
-
-
-colnames(mseout)<-c("Target-Only",c(0:K))
-mseout_plt <- as.data.frame(mseout)
-mseout_df = 
-  pivot_longer(
-    mseout_plt, 
-    1:(K+2),
-    names_to = "Data", 
-    values_to = "MSE")
-mseout_df
-
-msebox<-mseout_df |>
-  # instantiate plot
-  ggplot(aes(x = Data, y = MSE, color = Data)) +
-  # add box plot
-  geom_boxplot() +
-  # omit legend
-  theme(legend.position = "none") +
-  # add meta-data
-  labs(
-      title    = "Distribution of MSE"
-    , subtitle = paste("p =",p,"and diff(%) = ",diffperct*100, sep = " ")
-    , x        = "Number of Calibrated sites"
-    , y        = "MSE"
-    , caption  = "Source: Xpool."
-  )
-filename<-paste("p",p,"diff",diffperct, sep = "-")
-filename<-paste(filename,"png", sep = ".")
-ggsave(filename,msebox)
-  }
-} 
-
+topptx(plot_list[[1]], f1)
+topptx(plot_list[[2]], f2)
+topptx(plot_list[[3]], f3)
+topptx(plot_list[[4]], f4)
 
 ```
 

@@ -1,4 +1,4 @@
-simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test){
+simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test,hrecordnumber){
   set.seed(sim)
   n.tar <- n0 
   n.src <- nt 
@@ -6,13 +6,13 @@ simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
   beta.true <- as.numeric(coef.all$beta)
   B=cbind(beta.true, coef.all$w) #for target then for source(w for source)
   
-  X.pool = data.matrix(read.table('./Xpool.txt', header = F))
+
   # Choose 200 variables for simulation temporarily
-  X.pool = X.pool[,1:p]
+  X.pool2 = X.pool[,1:p]
   # There are 20000 rows, just sample n.tar(100) rows for target
   sample.tar = sample(1:nrow(X.pool), n.tar, replace = FALSE)
   # Sample out
-  X.tar = X.pool[sample.tar,] 
+  X.tar = X.pool2[sample.tar,] 
   # include intercepts
   X.tar = cbind(rep(1,nrow(X.tar)),X.tar)
   # Generate y.tar using MLR, without intercept, don't forget the epsilon. 
@@ -22,20 +22,33 @@ simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
   # y.tar.fast.M3 <- X.tar%*%beta.true
   
   # renew X.pool
-  X.pool = X.pool[-sample.tar,] 
+  X.pool2 = X.pool2[-sample.tar,] 
   X.src <- y.src <- list()
   for(k in 1:K){
     # from the rest of X.pool, get all of the source data
     sample.k = sample(1:nrow(X.pool), n.src[k], replace = FALSE) 
-    X.src[[k]] = X.pool[sample(1:nrow(X.pool), n.src[k], replace = FALSE),] 
+    X.src[[k]] = X.pool2[sample(1:nrow(X.pool2), n.src[k], replace = FALSE),] 
     # include intercepts
     X.src[[k]] = cbind(rep(1,nrow(X.src[[k]])),X.src[[k]])
     y.src[[k]]<- X.src[[k]]%*%B[, k+1]+ rnorm(nrow(X.src[[k]]))
-    X.pool = X.pool[-sample.k,]
+    X.pool2 = X.pool2[-sample.k,]
   }
   
+  # ### Data Distilation
+  # Ratio <- 0.1
+  # for (i in 1:K) {
+  #   # Compression
+  #   distillation_result <- svd_transfer(X.src[[i]],y.src[[i]],Ratio = 0.1)
+  #   X.src[[i]] <- distillation_result[[1]]
+  #   print("X.src distillation ready")
+  #   y.src[[i]] <- distillation_result[[2]]
+  #   print("y.src distillation ready")
+  # }
+  # ###
+  
+  
   # Test data
-  X.test = X.pool[sample(1:nrow(X.pool), n.test, replace = FALSE),]
+  X.test = X.pool2[sample(1:nrow(X.pool2), n.test, replace = FALSE),]
   # include intercepts
   X.test = cbind(rep(1,nrow(X.test)),X.test)
   y.test <- X.test%*%B[,1]+rnorm(n.test)
@@ -76,14 +89,14 @@ simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
   cbind(methods, mseout, aucout)
   
   # ###SURE Screening
-  auc.tar = c()
-  for(k in 1:K){
-    auc.tmp = get.auc(X.tar, y.tar, ww[[k]])
-    auc.tar = c(auc.tar, auc.tmp)
-  }
-  K.1st = which(auc.tar==sort(auc.tar, decreasing = T)[1])
-  K.2nd = which(auc.tar==sort(auc.tar, decreasing = T)[2])
-  K.3rd = which(auc.tar==sort(auc.tar, decreasing = T)[3])
+  # auc.tar = c()
+  # for(k in 1:K){
+  #   auc.tmp = get.auc(X.tar, y.tar, ww[[k]])
+  #   auc.tar = c(auc.tar, auc.tmp)
+  # }
+  # K.1st = which(auc.tar==sort(auc.tar, decreasing = T)[1])
+  # K.2nd = which(auc.tar==sort(auc.tar, decreasing = T)[2])
+  # K.3rd = which(auc.tar==sort(auc.tar, decreasing = T)[3])
   
   ###singleTL
   beta.TL1 = TL[[1]]$beta0
@@ -93,7 +106,381 @@ simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
     data.syn <- create.synthetic(K, X.tar, n.src, r, B=list(beta.TL1, beta.TL2, beta.TL3))
     
   ###COMMUTE M=0
+  # beta.syn12.M0 = ST.init(rbind(X.tar,data.syn$X.syn[[K.1st]],data.syn$X.syn[[K.2nd]]), c(y.tar,data.syn$y.syn[[K.1st]],data.syn$y.syn[[K.2nd]]))$beta0
+  beta.syn123.M0 = ST.init(rbind(X.tar,data.syn$X.syn[[1]],data.syn$X.syn[[2]],data.syn$X.syn[[3]]), c(y.tar,data.syn$y.syn[[1]],data.syn$y.syn[[2]],data.syn$y.syn[[3]]))$beta0
+   
+  ###COMMUTE M=1
+  # beta.syn12.M1 = Trans.global(rbind(X.tar,data.syn$X.syn[[K.2nd]]), c(y.tar,data.syn$y.syn[[K.2nd]]), X.src=list(X.src[[1]]), y.src=list(y.src[[1]]), delta=list(delta.TL[[1]]))
+  beta.syn123.M1 = Trans.global(rbind(X.tar,data.syn$X.syn[[2]],data.syn$X.syn[[3]]), c(y.tar,data.syn$y.syn[[2]],data.syn$y.syn[[3]]), X.src=list(X.src[[1]]), y.src=list(y.src[[1]]), delta=list(delta.TL[[1]]))
 
+  ###COMMUTE M=2
+  # beta.syn12.M2 = Trans.global(X.tar, y.tar, X.src=list(X.src[[1]],X.src[[2]]), y.src=list(y.src[[1]], y.src[[2]]), delta=list(delta.TL[[1]], delta.TL[[2]]))
+  beta.syn123.M2 = Trans.global(rbind(X.tar,data.syn$X.syn[[3]]), c(y.tar,data.syn$y.syn[[3]]), X.src=list(X.src[[1]], X.src[[2]]), y.src=list(y.src[[1]],y.src[[2]]), delta=list(delta.TL[[1]],delta.TL[[2]]))
+
+  ###COMMUTE M=3 (pooledTL)
+  # beta.TL12 = Trans.global(X.tar, y.tar, X.src=list(X.src[[K.1st]],X.src[[K.2nd]]), y.src=list(y.src[[K.1st]], y.src[[K.2nd]]), delta=list(delta.TL[[K.1st]], delta.TL[[K.2nd]]))
+  beta.TL123 = Trans.global(X.tar, y.tar, X.src=list(X.src[[1]],X.src[[2]],X.src[[3]]), y.src=list(y.src[[1]], y.src[[2]], y.src[[3]]), delta=list(delta.TL[[1]], delta.TL[[2]], delta.TL[[3]]))
+     
+  #####################
+  ### aggregation
+  #####################
+  X.til = Data.gen.one(n.tar=100, X.pool2)$X.tar
+  # include intercepts
+  X.til = cbind(rep(1,nrow(X.til)),X.til)
+  y.til <- X.til %*% beta.true + rnorm(nrow(X.til))
+  
+
+  ### naive aggregation
+  B.naive = matrix(0, nrow = p+1, ncol = K)
+  for (k in 1:K) {
+    B.naive[,k] = ww[[k]]
+  }
+  # B.naive = cbind(beta.tar, B.naive)
+  # # wt.naive.agg <- Agg.fun(B.naive, X.til, y.til, const=1)
+  # wt.naive.agg.new <- Agg.fun.new(B.naive, X.til, y.til, const=1)
+  # # beta.naive.agg <- B.naive%*%wt.naive.agg
+  # beta.naive.agg.new <- B.naive%*%wt.naive.agg.new
+  # 
+  # ### single-source TL
+  # B.singleTL = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3)
+  # # wt.singleTL.agg <- Agg.fun(B.singleTL, X.til, y.til, const=1)
+  # wt.singleTL.agg.new <- Agg.fun.new(B.singleTL, X.til, y.til, const=1)
+  # # beta.singleTL.agg <- B.singleTL%*%wt.singleTL.agg
+  # beta.singleTL.agg.new <- B.singleTL%*%wt.singleTL.agg.new
+
+  ### COMMUTE M=0 (federated)
+  B.syn.M0 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn123.M0)
+  # wt.syn.M0.agg <- Agg.fun(B.syn.M0, X.til, y.til, const=1)
+  wt.syn.M0.agg.new <- Agg.fun.new(B.syn.M0, X.til, y.til, const=1)
+  # beta.syn.M0.agg <- B.syn.M0%*%wt.syn.M0.agg
+  beta.syn.M0.agg.new <- B.syn.M0%*%wt.syn.M0.agg.new
+
+  ### COMMUTE M=1
+  B.syn.M1 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn123.M1)
+  # wt.syn.M1.agg <- Agg.fun(B.syn.M1, X.til, y.til, const=1)
+  wt.syn.M1.agg.new <- Agg.fun.new(B.syn.M1, X.til, y.til, const=1)
+  # beta.syn.M1.agg <- B.syn.M1%*%wt.syn.M1.agg
+  beta.syn.M1.agg.new <- B.syn.M1%*%wt.syn.M1.agg.new
+
+  ### COMMUTE M=2
+  B.syn.M2 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn123.M2)
+  # wt.syn.M2.agg <- Agg.fun(B.syn.M2, X.til, y.til, const=1)
+  wt.syn.M2.agg.new <- Agg.fun.new(B.syn.M2, X.til, y.til, const=1)
+  # beta.syn.M2.agg <- B.syn.M2%*%wt.syn.M2.agg
+  beta.syn.M2.agg.new <- B.syn.M2%*%wt.syn.M2.agg.new
+
+  ### COMMUTE M=3 (pooledTL)
+  B.TL = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.TL123)
+  # wt.TL.agg <- Agg.fun(B.TL, X.til, y.til, const=1)
+  wt.TL.agg.new <- Agg.fun.new(B.TL, X.til, y.til, const=1)
+  # beta.syn.M3.agg <- B.TL%*%wt.TL.agg
+  beta.syn.M3.agg.new <- B.TL%*%wt.TL.agg.new
+  
+  #evaluation using test data
+  # methods = c('w1', 'w2', 'w3', 
+  #             'beta.syn123.M0','beta.syn123.M1','beta.syn123.M2','beta.TL123')
+   methods = c('w1', 'w2', 'w3', 
+               'beta.syn.M0.agg.new','beta.syn.M1.agg.new','beta.syn.M2.agg.new','beta.syn.M3.agg.new')
+  mseout = c()
+  for(i in 1:length(methods)){
+    mseout = c(mseout, mse.fun(beta.true, as.numeric(get(methods[i]))))
+    
+  }
+  cbind(methods, mseout)
+  diffperct = h[1]/p
+  return(cbind(methods, mseout,p,diffperct))
+}
+
+
+
+simutaronly = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test){
+  set.seed(sim)
+  n.tar <- n0 
+  n.src <- nt 
+  coef.all <- Coef.gen(s=s, h=h, K=K, sig.delta, p=p, exact, intercept) #exact = False?
+  beta.true <- as.numeric(coef.all$beta)
+  B=cbind(beta.true, coef.all$w) #for target then for source(w for source)
+  
+  X.pool2 = X.pool[,1:p]
+  # There are 20000 rows, just sample n.tar(100) rows for target
+  sample.tar = sample(1:nrow(X.pool), n.tar, replace = FALSE)
+  # Sample out
+  X.tar = X.pool2[sample.tar,] 
+  # include intercepts
+  X.tar = cbind(rep(1,nrow(X.tar)),X.tar)
+  # Generate y.tar using MLR, without intercept, don't forget the epsilon. 
+  y.tar<- X.tar %*% beta.true + rnorm(nrow(X.tar))
+  
+  # temp generate values for the targeted response variable
+  # y.tar.fast.M3 <- X.tar%*%beta.true
+  
+  # renew X.pool
+  X.pool2 = X.pool2[-sample.tar,] 
+  X.src <- y.src <- list()
+  for(k in 1:K){
+    # from the rest of X.pool, get all of the source data
+    sample.k = sample(1:nrow(X.pool2), n.src[k], replace = FALSE) 
+    X.src[[k]] = X.pool2[sample(1:nrow(X.pool2), n.src[k], replace = FALSE),] 
+    # include intercepts
+    X.src[[k]] = cbind(rep(1,nrow(X.src[[k]])),X.src[[k]])
+    y.src[[k]]<- X.src[[k]]%*%B[, k+1]+ rnorm(nrow(X.src[[k]]))
+    X.pool2 = X.pool2[-sample.k,]
+  }
+  
+
+  
+  
+  ###directly use cv.glmnet to fit lasso
+  beta.tar <- as.numeric(ST.init(X.tar, y.tar)$beta0)
+
+  method = "LASSOTargetOnly"
+  mseout = mse.fun(beta.true, beta.tar)
+
+  # because this time the elements of h are all the same 
+  diffperct = h[1]/p
+  return(cbind(method, mseout,p,diffperct))
+  }
+  
+simutaronly2000 = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test, hrecordnumber){
+  set.seed(sim)
+  n.tar <- n0 
+  n.src <- nt 
+  coef.all <- Coef.gen(s=s, h=h, K=K, sig.delta, p=p, exact, intercept) #exact = False?
+  beta.true <- as.numeric(coef.all$beta)
+  B=cbind(beta.true, coef.all$w) #for target then for source(w for source)
+  
+  X.pool2 = X.pool[,1:p]
+  # There are 20000 rows, just sample n.tar(100) rows for target
+  sample.tar = sample(1:nrow(X.pool), n.tar, replace = FALSE)
+  # Sample out
+  X.tar = X.pool2[sample.tar,] 
+  # include intercepts
+  X.tar = cbind(rep(1,nrow(X.tar)),X.tar)
+  # Generate y.tar using MLR, without intercept, don't forget the epsilon. 
+  y.tar<- X.tar %*% beta.true + rnorm(nrow(X.tar))
+  
+  # temp generate values for the targeted response variable
+  # y.tar.fast.M3 <- X.tar%*%beta.true
+  
+  # renew X.pool
+  X.pool2 = X.pool2[-sample.tar,] 
+  X.src <- y.src <- list()
+  for(k in 1:K){
+    # from the rest of X.pool, get all of the source data
+    sample.k = sample(1:nrow(X.pool2), n.src[k], replace = FALSE) 
+    X.src[[k]] = X.pool2[sample(1:nrow(X.pool2), n.src[k], replace = FALSE),] 
+    # include intercepts
+    X.src[[k]] = cbind(rep(1,nrow(X.src[[k]])),X.src[[k]])
+    y.src[[k]]<- X.src[[k]]%*%B[, k+1]+ rnorm(nrow(X.src[[k]]))
+    X.pool2 = X.pool2[-sample.k,]
+  }
+  
+  # Test data
+  X.test = X.pool2[sample(1:nrow(X.pool2), n.test, replace = FALSE),]
+  # include intercepts
+  X.test = cbind(rep(1,nrow(X.test)),X.test)
+  y.test <- X.test%*%B[,1]+rnorm(n.test)
+  
+  
+  ###directly use cv.glmnet to fit lasso
+  beta.tar <- as.numeric(ST.init(X.tar, y.tar)$beta0)
+  
+  method = "LASSOTargetOnly"
+  mseout = mse.fun(beta.true, beta.tar)
+  
+  # because this time the elements of h are all the same 
+  diffperct = hrecordnumber
+  return(cbind(method, mseout,p,diffperct))
+}
+
+simuwonly  = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test){
+  set.seed(sim)
+  n.tar <- n0 
+  n.src <- nt 
+  coef.all <- Coef.gen(s=s, h=h, K=K, sig.delta, p=p, exact, intercept) #exact = False?
+  beta.true <- as.numeric(coef.all$beta)
+  B=cbind(beta.true, coef.all$w) #for target then for source(w for source)
+  
+  
+  # Choose 200 variables for simulation temporarily
+  X.pool2 = X.pool[,1:p]
+  # There are 20000 rows, just sample n.tar(100) rows for target
+  sample.tar = sample(1:nrow(X.pool), n.tar, replace = FALSE)
+  # Sample out
+  X.tar = X.pool2[sample.tar,] 
+  # include intercepts
+  X.tar = cbind(rep(1,nrow(X.tar)),X.tar)
+  # Generate y.tar using MLR, without intercept, don't forget the epsilon. 
+  y.tar<- X.tar %*% beta.true + rnorm(nrow(X.tar))
+  
+  # temp generate values for the targeted response variable
+  # y.tar.fast.M3 <- X.tar%*%beta.true
+  
+  # renew X.pool
+  X.pool2 = X.pool2[-sample.tar,] 
+  X.src <- y.src <- list()
+  for(k in 1:K){
+    # from the rest of X.pool, get all of the source data
+    sample.k = sample(1:nrow(X.pool), n.src[k], replace = FALSE) 
+    X.src[[k]] = X.pool2[sample(1:nrow(X.pool2), n.src[k], replace = FALSE),] 
+    # include intercepts
+    X.src[[k]] = cbind(rep(1,nrow(X.src[[k]])),X.src[[k]])
+    y.src[[k]]<- X.src[[k]]%*%B[, k+1]+ rnorm(nrow(X.src[[k]]))
+    X.pool2 = X.pool2[-sample.k,]
+  }
+  
+  # Test data
+  X.test = X.pool2[sample(1:nrow(X.pool2), n.test, replace = FALSE),]
+  # include intercepts
+  X.test = cbind(rep(1,nrow(X.test)),X.test)
+  y.test <- X.test%*%B[,1]+rnorm(n.test)
+  
+  
+  ###directly use cv.glmnet to fit lasso
+  beta.tar <- as.numeric(ST.init(X.tar, y.tar)$beta0)
+  
+  w = list()
+  TL = list()
+  for(k in 1:K){
+    w[[k]] <- as.numeric(ST.init(X.src[[k]], y.src[[k]])$beta0)
+    print(paste0('w',k))
+    TL[[k]] <- TL.init(X.tar, y.tar, X.src=X.src[[k]], y.src=y.src[[k]], w=w[[k]])
+    print(paste0('beta.TL',k))
+  }
+  
+  ###calculate delta for each source
+  delta.TL = list()
+  for(k in 1:K){
+    delta.TL[[k]] = thres(TL[[k]]$delta0, n.tar, p) ###add threshold
+  }
+  
+  
+  
+  #source-only LASSO + threshold
+  w1 = thres(w[[1]], sqrt(n.src[1]), p)
+  w2 = thres(w[[2]], sqrt(n.src[2]), p)
+  w3 = thres(w[[3]], sqrt(n.src[3]), p)
+  ww = list(w1=w1, w2=w2, w3=w3)
+   
+  
+  methods = c('w1', 'w2', 'w3')
+  mseout = c()
+  for(i in 1:length(methods)){
+    mseout = c(mseout, mse.fun(beta.true, as.numeric(get(methods[i]))))
+    
+  }
+  cbind(methods, mseout)
+  diffperct = h[1]/p
+  return(cbind(methods, mseout,p,diffperct))
+}
+
+
+simusvd = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test,hrecordnumber){
+  set.seed(sim)
+  n.tar <- n0 
+  n.src <- nt 
+  coef.all <- Coef.gen(s=s, h=h, K=K, sig.delta, p=p, exact, intercept) #exact = False?
+  beta.true <- as.numeric(coef.all$beta)
+  B=cbind(beta.true, coef.all$w) #for target then for source(w for source)
+  
+  
+  # Choose 200 variables for simulation temporarily
+  X.pool2 = X.pool[,1:p]
+  # There are 20000 rows, just sample n.tar(100) rows for target
+  sample.tar = sample(1:nrow(X.pool), n.tar, replace = FALSE)
+  # Sample out
+  X.tar = X.pool2[sample.tar,] 
+  # include intercepts
+  X.tar = cbind(rep(1,nrow(X.tar)),X.tar)
+  # Generate y.tar using MLR, without intercept, don't forget the epsilon. 
+  y.tar<- X.tar %*% beta.true + rnorm(nrow(X.tar))
+  
+  # temp generate values for the targeted response variable
+  # y.tar.fast.M3 <- X.tar%*%beta.true
+  
+  # renew X.pool
+  X.pool2 = X.pool2[-sample.tar,] 
+  X.src <- y.src <- list()
+  for(k in 1:K){
+    # from the rest of X.pool, get all of the source data
+    sample.k = sample(1:nrow(X.pool), n.src[k], replace = FALSE) 
+    X.src[[k]] = X.pool2[sample(1:nrow(X.pool2), n.src[k], replace = FALSE),] 
+    # include intercepts
+    X.src[[k]] = cbind(rep(1,nrow(X.src[[k]])),X.src[[k]])
+    y.src[[k]]<- X.src[[k]]%*%B[, k+1]+ rnorm(nrow(X.src[[k]]))
+    X.pool2 = X.pool2[-sample.k,]
+  }
+  
+
+  
+  
+  # Test data
+  X.test = X.pool2[sample(1:nrow(X.pool2), n.test, replace = FALSE),]
+  # include intercepts
+  X.test = cbind(rep(1,nrow(X.test)),X.test)
+  y.test <- X.test%*%B[,1]+rnorm(n.test)
+  
+  
+  ###directly use cv.glmnet to fit lasso
+  beta.tar <- as.numeric(ST.init(X.tar, y.tar)$beta0)
+  
+  w = list()
+  TL = list()
+  for(k in 1:K){
+    w[[k]] <- as.numeric(ST.init(X.src[[k]], y.src[[k]])$beta0)
+    print(paste0('w',k))
+    TL[[k]] <- TL.init(X.tar, y.tar, X.src=X.src[[k]], y.src=y.src[[k]], w=w[[k]])
+    print(paste0('beta.TL',k))
+  }
+  
+  ###calculate delta for each source
+  delta.TL = list()
+  for(k in 1:K){
+    delta.TL[[k]] = thres(TL[[k]]$delta0, n.tar, p) ###add threshold
+  }
+  
+
+  
+  #source-only LASSO + threshold
+  w1 = thres(w[[1]], sqrt(n.src[1]), p)
+  w2 = thres(w[[2]], sqrt(n.src[2]), p)
+  w3 = thres(w[[3]], sqrt(n.src[3]), p)
+  ww = list(w1=w1, w2=w2, w3=w3)
+  
+
+  mseout = c(); 
+  
+  # ###SURE Screening
+  # auc.tar = c()
+  # for(k in 1:K){
+  #   auc.tmp = get.auc(X.tar, y.tar, ww[[k]])
+  #   auc.tar = c(auc.tar, auc.tmp)
+  # }
+  # K.1st = which(auc.tar==sort(auc.tar, decreasing = T)[1])
+  # K.2nd = which(auc.tar==sort(auc.tar, decreasing = T)[2])
+  # K.3rd = which(auc.tar==sort(auc.tar, decreasing = T)[3])
+  
+  ###singleTL
+  beta.TL1 = TL[[1]]$beta0
+  beta.TL2 = TL[[2]]$beta0
+  beta.TL3 = TL[[3]]$beta0
+  
+  
+  data.syn <- create.synthetic(K, X.tar, n.src, r, B=list(beta.TL1, beta.TL2, beta.TL3))
+  
+  
+  for (i in 1:K) {
+    # Compression
+    distillation_result <- svd_transfer(X.src[[i]],y.src[[i]],Ratio = 0.15)
+    X.src[[i]] <- distillation_result[[1]]
+    print("X.src distillation ready")
+    y.src[[i]] <- distillation_result[[2]]
+    print("y.src distillation ready")
+  }
+  
+  
+  
+  ###COMMUTE M=0
   # beta.syn12.M0 = ST.init(rbind(X.tar,data.syn$X.syn[[K.1st]],data.syn$X.syn[[K.2nd]]), c(y.tar,data.syn$y.syn[[K.1st]],data.syn$y.syn[[K.2nd]]))$beta0
   beta.syn123.M0 = ST.init(rbind(X.tar,data.syn$X.syn[[1]],data.syn$X.syn[[2]],data.syn$X.syn[[3]]), c(y.tar,data.syn$y.syn[[1]],data.syn$y.syn[[2]],data.syn$y.syn[[3]]))$beta0
   
@@ -109,72 +496,76 @@ simu = function(sim, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test)
   # beta.TL12 = Trans.global(X.tar, y.tar, X.src=list(X.src[[K.1st]],X.src[[K.2nd]]), y.src=list(y.src[[K.1st]], y.src[[K.2nd]]), delta=list(delta.TL[[K.1st]], delta.TL[[K.2nd]]))
   beta.TL123 = Trans.global(X.tar, y.tar, X.src=list(X.src[[1]],X.src[[2]],X.src[[3]]), y.src=list(y.src[[1]], y.src[[2]], y.src[[3]]), delta=list(delta.TL[[1]], delta.TL[[2]], delta.TL[[3]]))
   
+  
+  
+  
+  
   #####################
   ### aggregation
   #####################
-  # X.til = Data.gen.one(n.tar=100, X.pool)$X.tar
-  # y.til = rbinom(100, size=1, prob=logistic(beta.true[1]+X.til%*%beta.true[-1]))
-  # 
-  # ### naive aggregation
-  # B.naive = matrix(0, nrow = p+1, ncol = K)
-  # for (k in 1:K) {
-  #   B.naive[,k] = ww[[k]]
-  # }
+  X.til = Data.gen.one(n.tar=100, X.pool2)$X.tar
+  # include intercepts
+  X.til = cbind(rep(1,nrow(X.til)),X.til)
+  y.til <- X.til %*% beta.true + rnorm(nrow(X.til))
+  
+  
+  ### naive aggregation
+  B.naive = matrix(0, nrow = p+1, ncol = K)
+  for (k in 1:K) {
+    B.naive[,k] = ww[[k]]
+  }
   # B.naive = cbind(beta.tar, B.naive)
-  # wt.naive.agg <- Agg.fun(B.naive, X.til, y.til, const=1)
+  # # wt.naive.agg <- Agg.fun(B.naive, X.til, y.til, const=1)
   # wt.naive.agg.new <- Agg.fun.new(B.naive, X.til, y.til, const=1)
-  # beta.naive.agg <- B.naive%*%wt.naive.agg
+  # # beta.naive.agg <- B.naive%*%wt.naive.agg
   # beta.naive.agg.new <- B.naive%*%wt.naive.agg.new
   # 
   # ### single-source TL
   # B.singleTL = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3)
-  # wt.singleTL.agg <- Agg.fun(B.singleTL, X.til, y.til, const=1)
+  # # wt.singleTL.agg <- Agg.fun(B.singleTL, X.til, y.til, const=1)
   # wt.singleTL.agg.new <- Agg.fun.new(B.singleTL, X.til, y.til, const=1)
-  # beta.singleTL.agg <- B.singleTL%*%wt.singleTL.agg
+  # # beta.singleTL.agg <- B.singleTL%*%wt.singleTL.agg
   # beta.singleTL.agg.new <- B.singleTL%*%wt.singleTL.agg.new
-  # 
-  # ### COMMUTE M=0 (federated)
-  # B.syn.M0 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn12.M0, beta.syn123.M0)
+  
+  ### COMMUTE M=0 (federated)
+  B.syn.M0 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn123.M0)
   # wt.syn.M0.agg <- Agg.fun(B.syn.M0, X.til, y.til, const=1)
-  # wt.syn.M0.agg.new <- Agg.fun.new(B.syn.M0, X.til, y.til, const=1)
+  wt.syn.M0.agg.new <- Agg.fun.new(B.syn.M0, X.til, y.til, const=1)
   # beta.syn.M0.agg <- B.syn.M0%*%wt.syn.M0.agg
-  # beta.syn.M0.agg.new <- B.syn.M0%*%wt.syn.M0.agg.new
-  # 
-  # ### COMMUTE M=1
-  # B.syn.M1 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn12.M1, beta.syn123.M1)
+  beta.syn.M0.agg.new <- B.syn.M0%*%wt.syn.M0.agg.new
+  
+  ### COMMUTE M=1
+  B.syn.M1 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn123.M1)
   # wt.syn.M1.agg <- Agg.fun(B.syn.M1, X.til, y.til, const=1)
-  # wt.syn.M1.agg.new <- Agg.fun.new(B.syn.M1, X.til, y.til, const=1)
+  wt.syn.M1.agg.new <- Agg.fun.new(B.syn.M1, X.til, y.til, const=1)
   # beta.syn.M1.agg <- B.syn.M1%*%wt.syn.M1.agg
-  # beta.syn.M1.agg.new <- B.syn.M1%*%wt.syn.M1.agg.new
-  # 
-  # ### COMMUTE M=2
-  # B.syn.M2 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn12.M2, beta.syn123.M2)
+  beta.syn.M1.agg.new <- B.syn.M1%*%wt.syn.M1.agg.new
+  
+  ### COMMUTE M=2
+  B.syn.M2 = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.syn123.M2)
   # wt.syn.M2.agg <- Agg.fun(B.syn.M2, X.til, y.til, const=1)
-  # wt.syn.M2.agg.new <- Agg.fun.new(B.syn.M2, X.til, y.til, const=1)
+  wt.syn.M2.agg.new <- Agg.fun.new(B.syn.M2, X.til, y.til, const=1)
   # beta.syn.M2.agg <- B.syn.M2%*%wt.syn.M2.agg
-  # beta.syn.M2.agg.new <- B.syn.M2%*%wt.syn.M2.agg.new
-  # 
-  # ### COMMUTE M=3 (pooledTL)
-  # B.TL = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.TL12, beta.TL123)
+  beta.syn.M2.agg.new <- B.syn.M2%*%wt.syn.M2.agg.new
+  
+  ### COMMUTE M=3 (pooledTL)
+  B.TL = cbind(beta.tar, beta.TL1, beta.TL2, beta.TL3, beta.TL123)
   # wt.TL.agg <- Agg.fun(B.TL, X.til, y.til, const=1)
-  # wt.TL.agg.new <- Agg.fun.new(B.TL, X.til, y.til, const=1)
+  wt.TL.agg.new <- Agg.fun.new(B.TL, X.til, y.til, const=1)
   # beta.syn.M3.agg <- B.TL%*%wt.TL.agg
-  # beta.syn.M3.agg.new <- B.TL%*%wt.TL.agg.new
+  beta.syn.M3.agg.new <- B.TL%*%wt.TL.agg.new
   
   #evaluation using test data
+  # mehods = c('w1', 'w2', 'w3', 
+  #             'beta.syn123.M0','beta.syn123.M1','beta.syn123.M2','beta.TL123')
   methods = c('w1', 'w2', 'w3', 
-              'beta.syn123.M0','beta.syn123.M1','beta.syn123.M2','beta.TL123')
+              'beta.syn.M0.agg.new','beta.syn.M1.agg.new','beta.syn.M2.agg.new','beta.syn.M3.agg.new')
   mseout = c()
   for(i in 1:length(methods)){
     mseout = c(mseout, mse.fun(beta.true, as.numeric(get(methods[i]))))
     
   }
   cbind(methods, mseout)
-  diffperct = h/p
+  diffperct = h[1]/p
   return(cbind(methods, mseout,p,diffperct))
 }
-
-
-
-
-

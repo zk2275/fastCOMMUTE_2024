@@ -31,34 +31,43 @@ h.tmp = sim_setting[id, 'h']
 h = c(as.numeric(gsub(".*\\((.*)\\,.*", "\\1", h.tmp)), as.numeric(gsub(".*\\,(.*)\\;.*", "\\1", h.tmp)), as.numeric(gsub(".*\\;(.*)\\).*", "\\1", h.tmp)))
 r = sim_setting[id, 'r']
 dir_out = 'path_to_save_result'
+h = c(2,2,2)
+
 
 exact = FALSE             #TRUE=S1; FALSE=S2
 K = 3                     #total number of source population 
 p = 80                  #number of variables
 s = p/2
 n0 = 100                  #target population size
-nt = c(2000, 2000, 2000)    #source population size
+nt = c(2000, 2500, 3000)      #source population size
 n.test = 1000
 intercept = rep(1, K+1) 
+X.pool = data.matrix(read.table('./Xpool.txt', header = F))
 ```
 
 
-# Generating Results
+# Generating Results(not including LassoTarget)
 
 ```{r}
+
 library(tidyr)
- LOOP=25
+ LOOP=1
  source('core_functions_v4_woodbury.R')
  source('COMMUTE_sim_example.R')
- diffloop<-c(1,2,5)
- ploop<-c(80,120,200)
- mselistCOMMUTE<-matrix(0,LOOP*7,4)
-for (k in diffloop) {
+ # diffloop<-c(2,4)
+ ploop<-c(500,1000)
+ mselistCOMMUTE<-matrix(0,LOOP*7 ,4)
+# for (k in diffloop) {
   for (j in ploop) {
- diffperct = k*0.1
+ diffperct = k*0.01
  p = j
  s = p/2
- h= rep(p*diffperct,3)   #Difference between target and source
+ if(j==500){
+    h= c(10,20,20)   #Difference between target and source
+ }
+ if(j==1000){
+    h= c(20,40,40)   #Difference between target and source
+ }
 
  # Only Target & M=0 to M=K
  mseout = matrix(0,LOOP,K+1+1+1+1)
@@ -67,8 +76,43 @@ for (k in diffloop) {
 for (loop in 1:LOOP) {
 #set.seed(sim = loop)
   
- COMMUTEout = tryCatch(simu(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test), error=function(err) list(matrix(NA,7,2)))
+ COMMUTEout = tryCatch(simu(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact=FALSE, r, n.test), error=function(err) list(matrix(NA,7,4)))
  mselistCOMMUTE<-rbind(mselistCOMMUTE,as.matrix(COMMUTEout))
+ 
+}
+ 
+  # }
+}                                                       
+ #save(mselistCOMMUTE,file = "COMMUTELOOP206.RData")
+```
+
+
+
+# Generating Results(only LassoTarget) 
+
+```{r}
+library(tidyr)
+ LOOP=1
+ X.pool = data.matrix(read.table('./Xpool.txt', header = F))
+ source('core_functions_v4_woodbury.R')
+ source('COMMUTE_sim_example.R')
+ diffloop<-c(2,4)
+ ploop<-c(600,1000)
+ mselistLASSOTargetOnly<-matrix(0,LOOP,4)
+for (k in diffloop) {
+  for (j in ploop) {
+ diffperct = k*0.01
+ p = j
+ s = p/2
+ h= rep(p*diffperct,3)   #Difference between target and source
+
+
+# Simulation results  
+for (loop in 1:LOOP) {
+#set.seed(sim = loop)
+  
+ COMMUTEout = tryCatch(simutaronly(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact, r, n.test), error=function(err) list(matrix(NA,1,4)))
+ mselistLASSOTargetOnly<-rbind(mselistLASSOTargetOnly,as.matrix(COMMUTEout))
  
 }
  
@@ -77,7 +121,38 @@ for (loop in 1:LOOP) {
   }
 } 
 
-save(mselistCOMMUTE,file = "COMMUTELOOP.RData")
+save(mselistLASSOTargetOnly,file = " LASSOTargetOnly129.RData")
 ```
 
+
+# Test for w
+
+```{r}
+library(tidyr)
+ LOOP=1
+ source('core_functions_v4_woodbury.R')
+ source('COMMUTE_sim_example.R')
+ diffloop<-c(2,4)
+ ploop<-c(600,1000)
+ mselistCOMMUTEw<-matrix(0,LOOP*3 ,4)
+for (k in diffloop) {
+  for (j in ploop) {
+ diffperct = k*0.01
+ p = j
+ s = p/2
+ h= rep(p*diffperct,3) 
+
+# Simulation results  
+for (loop in 1:LOOP) {
+#set.seed(sim = loop)
+  
+ COMMUTEoutw = tryCatch(simuwonly(loop, p, s, K, n0, nt, h, sig.delta, intercept, exact=FALSE, r, n.test), error=function(err) list(matrix(NA,3,4)))
+ mselistCOMMUTEw<-rbind(mselistCOMMUTEw,as.matrix(COMMUTEoutw))
+ 
+}
+ 
+  }
+}                                                       
+# save(mselistCOMMUTEw,file = "COMMUTELOOP129.RData")
+```
 
